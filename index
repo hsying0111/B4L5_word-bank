@@ -1,0 +1,322 @@
+https://docs.google.com/forms/d/e/1FAIpQLSfqt9nALXcF5dpgT89TO0VdF9Rf4YJyog7zA9oUS04paKuD3w/viewform?usp=header
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L5 單字互動測驗 (Page 83)</title>
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .flip-card { perspective: 1000px; }
+        .flip-card-inner {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
+        .flip-card-front, .flip-card-back {
+            backface-visibility: hidden;
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+        }
+        .flip-card-back { transform: rotateY(180deg); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- 單字資料庫 (Page 83) ---
+        const vocabList = [
+            { id: 1, word: "earthquake", translation: "地震" },
+            { id: 2, word: "cover", translation: "遮蓋;遮蔽;封面" },
+            { id: 3, word: "typhoon", translation: "颱風" },
+            { id: 4, word: "candle", translation: "蠟燭" },
+            { id: 5, word: "smoke alarm", translation: "煙霧警報器" },
+            { id: 6, word: "elevator", translation: "電梯" },
+            { id: 7, word: "raise", translation: "舉起;增加" },
+            { id: 8, word: "pull", translation: "拉;抽出" },
+            { id: 9, word: "push", translation: "推;按" },
+            { id: 10, word: "rich", translation: "富有的;豐富的" },
+            { id: 11, word: "deep", translation: "深的" },
+            { id: 12, word: "hold on", translation: "緊緊抓牢;堅持下去" }
+        ];
+
+        // --- 測驗題目 ---
+        const quizQuestions = [
+            { type: "listening", text: "請聽語音選出正確單字", answer: "typhoon", options: ["typhoon", "earthquake", "elevator", "candle"] },
+            { type: "meaning", text: "A sudden violent movement of the earth's surface.", answer: "earthquake", options: ["cover", "earthquake", "raise", "deep"] },
+            { type: "image", text: "🕯️ (What is this?)", answer: "candle", options: ["candle", "smoke alarm", "rich", "pull"] },
+            { type: "meaning", text: "To move something towards yourself.", answer: "pull", options: ["push", "pull", "raise", "hold on"] },
+            { type: "listening", text: "請聽語音選出正確單字", answer: "smoke alarm", options: ["elevator", "cover", "typhoon", "smoke alarm"] },
+            { type: "meaning", text: "Having a lot of money.", answer: "rich", options: ["rich", "deep", "cover", "raise"] },
+            { type: "image", text: "🛗 (What is this?)", answer: "elevator", options: ["elevator", "push", "pull", "candle"] },
+            { type: "meaning", text: "To use physical pressure or force, especially with your hands.", answer: "push", options: ["pull", "push", "hold on", "cover"] }
+        ];
+
+        // 語音播放功能
+        const playAudio = (text) => {
+            const msg = new SpeechSynthesisUtterance(text);
+            msg.lang = 'en-US';
+            window.speechSynthesis.speak(msg);
+        };
+
+        const App = () => {
+            const [stage, setStage] = useState('login'); // login, flashcards, quiz, result
+            const [student, setStudent] = useState({ cls: '', num: '', name: '' });
+            
+            // 閃卡狀態
+            const [cards, setCards] = useState(vocabList.map(v => ({ ...v, listened: false, flipped: false })));
+            const allFlipped = cards.every(c => c.flipped);
+
+            // 測驗狀態
+            const [currentQ, setCurrentQ] = useState(0);
+            const [score, setScore] = useState(0);
+            const [attempts, setAttempts] = useState(0); // 記錄當前題目的嘗試次數
+            const [wrongOptions, setWrongOptions] = useState([]); // 記錄當前點錯的選項
+            
+            // 計時器 (5分鐘 = 300秒)
+            const TIME_LIMIT = 300;
+            const [timeLeft, setTimeLeft] = useState(TIME_LIMIT);
+
+            useEffect(() => {
+                let timer;
+                if (stage === 'quiz' && timeLeft > 0) {
+                    timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+                } else if (stage === 'quiz' && timeLeft === 0) {
+                    handleFinishQuiz();
+                }
+                return () => clearInterval(timer);
+            }, [stage, timeLeft]);
+
+            // --- 登入處理 ---
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (student.cls && student.num && student.name) {
+                    setStage('flashcards');
+                }
+            };
+
+            // --- 閃卡處理 ---
+            const handleListen = (index, word) => {
+                playAudio(word);
+                const newCards = [...cards];
+                newCards[index].listened = true;
+                setCards(newCards);
+            };
+
+            const handleFlip = (index) => {
+                if (!cards[index].listened) {
+                    alert("請先聆聽發音才能翻看中文喔！");
+                    return;
+                }
+                const newCards = [...cards];
+                newCards[index].flipped = !newCards[index].flipped;
+                setCards(newCards);
+            };
+
+            // --- 測驗處理 ---
+            const handleAnswer = (selectedOption) => {
+                const isCorrect = selectedOption === quizQuestions[currentQ].answer;
+                
+                if (isCorrect) {
+                    if (attempts === 0) {
+                        setScore(score + 1); // 第一次就對得 1 分
+                    }
+                    nextQuestion();
+                } else {
+                    if (attempts === 0) {
+                        setAttempts(1);
+                        setWrongOptions([...wrongOptions, selectedOption]);
+                        // 錯第一次不跳題，標記為紅色
+                    } else {
+                        // 錯第二次，直接下一題 (0分)
+                        nextQuestion();
+                    }
+                }
+            };
+
+            const nextQuestion = () => {
+                if (currentQ < quizQuestions.length - 1) {
+                    setCurrentQ(currentQ + 1);
+                    setAttempts(0);
+                    setWrongOptions([]);
+                } else {
+                    handleFinishQuiz();
+                }
+            };
+
+            const handleFinishQuiz = () => {
+                setStage('result');
+                submitToGoogleForm();
+            };
+
+            const submitToGoogleForm = () => {
+                // =============== 請在此替換您的 Google Form 網址與 Entry ID ===============
+                const formUrl = "https://docs.google.com/forms/d/e/1FAIpQLSfqt9nALXcF5dpgT89TO0VdF9Rf4YJyog7zA9oUS04paKuD3w/viewform?usp=header";
+                const entries = {
+                    cls: "entry.111111111", // 班級 Entry ID
+                    num: "entry.222222222", // 座號 Entry ID
+                    name: "entry.333333333", // 姓名 Entry ID
+                    score: "entry.444444444", // 分數 Entry ID
+                };
+                
+                // 產生表單數據 (使用 FormData 模擬)
+                const formData = new FormData();
+                formData.append(entries.cls, student.cls);
+                formData.append(entries.num, student.num);
+                formData.append(entries.name, student.name);
+                formData.append(entries.score, score);
+                formData.append(entries.time, (TIME_LIMIT - timeLeft) + "s"); // 紀錄花費時間
+
+                fetch(formUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: formData
+                }).then(() => {
+                    console.log("成績已上傳");
+                }).catch(err => {
+                    console.error("上傳失敗", err);
+                });
+            };
+
+            // --- 渲染畫面 ---
+            if (stage === 'login') {
+                return (
+                    <div className="flex items-center justify-center h-screen">
+                        <form onSubmit={handleLogin} className="bg-white p-8 rounded-lg shadow-md w-96">
+                            <h2 className="text-2xl font-bold mb-6 text-center text-blue-600">L5 單字隨堂測驗</h2>
+                            <div className="mb-4">
+                                <label className="block text-gray-700 mb-2">班級</label>
+                                <input type="text" required className="w-full border p-2 rounded" value={student.cls} onChange={e => setStudent({...student, cls: e.target.value})} />
+                            </div>
+                            <div className="mb-4">
+                                <label className="block text-gray-700 mb-2">座號</label>
+                                <input type="number" required className="w-full border p-2 rounded" value={student.num} onChange={e => setStudent({...student, num: e.target.value})} />
+                            </div>
+                            <div className="mb-6">
+                                <label className="block text-gray-700 mb-2">姓名</label>
+                                <input type="text" required className="w-full border p-2 rounded" value={student.name} onChange={e => setStudent({...student, name: e.target.value})} />
+                            </div>
+                            <button type="submit" className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 font-bold">開始學習</button>
+                        </form>
+                    </div>
+                );
+            }
+
+            if (stage === 'flashcards') {
+                return (
+                    <div className="max-w-4xl mx-auto p-6">
+                        <h2 className="text-3xl font-bold text-center mb-2">防弊閃卡複習</h2>
+                        <p className="text-center text-red-500 mb-6 font-bold">❗ 規定：必須點擊喇叭聽過發音，才能翻面。全翻完才能測驗。</p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {cards.map((card, idx) => (
+                                <div key={card.id} className={`flip-card w-full h-32 cursor-pointer ${card.flipped ? 'flipped' : ''}`}>
+                                    <div className="flip-card-inner relative w-full h-full text-center shadow-md rounded-lg">
+                                        {/* 正面 */}
+                                        <div className="flip-card-front bg-white flex flex-col items-center justify-center border-2 border-blue-200 rounded-lg absolute w-full h-full">
+                                            <span className="text-xl font-bold mb-2">{card.word}</span>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleListen(idx, card.word); }}
+                                                className={`px-3 py-1 rounded text-sm text-white ${card.listened ? 'bg-green-500' : 'bg-blue-500'}`}
+                                            >
+                                                🔊 {card.listened ? '已聽' : '發音'}
+                                            </button>
+                                            <div onClick={() => handleFlip(idx)} className="absolute bottom-1 right-2 text-xs text-gray-400">點擊翻面 ⤻</div>
+                                        </div>
+                                        {/* 反面 */}
+                                        <div className="flip-card-back bg-blue-100 flex items-center justify-center border-2 border-blue-400 rounded-lg absolute w-full h-full" onClick={() => handleFlip(idx)}>
+                                            <span className="text-lg font-bold text-blue-800 px-2">{card.translation}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-8 text-center">
+                            <button 
+                                onClick={() => setStage('quiz')} 
+                                disabled={!allFlipped}
+                                className={`px-8 py-3 rounded text-xl font-bold text-white transition-colors ${allFlipped ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-400 cursor-not-allowed'}`}
+                            >
+                                {allFlipped ? "進入隨堂測驗" : "請翻開所有卡片解鎖測驗"}
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (stage === 'quiz') {
+                const q = quizQuestions[currentQ];
+                const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+
+                return (
+                    <div className="max-w-2xl mx-auto p-6 mt-10">
+                        <div className="bg-white p-8 rounded-lg shadow-lg">
+                            <div className="flex justify-between items-center mb-6">
+                                <span className="text-gray-600 font-bold">進度: {currentQ + 1} / {quizQuestions.length}</span>
+                                <span className={`text-xl font-bold ${timeLeft < 60 ? 'text-red-600 animate-pulse' : 'text-green-600'}`}>
+                                    倒數: {formatTime(timeLeft)}
+                                </span>
+                            </div>
+                            
+                            <div className="mb-8 text-center">
+                                <h3 className="text-2xl font-bold mb-4">{q.text}</h3>
+                                {q.type === 'listening' && (
+                                    <button onClick={() => playAudio(q.answer)} className="bg-blue-100 p-4 rounded-full hover:bg-blue-200">
+                                        🔊 播放聽力
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                {q.options.map((opt, i) => {
+                                    const isWrong = wrongOptions.includes(opt);
+                                    return (
+                                        <button 
+                                            key={i}
+                                            disabled={isWrong}
+                                            onClick={() => handleAnswer(opt)}
+                                            className={`p-4 rounded-lg text-lg font-bold transition-colors border-2 
+                                                ${isWrong ? 'bg-red-100 border-red-300 text-red-400 cursor-not-allowed' : 'bg-white border-blue-500 text-blue-700 hover:bg-blue-50'}
+                                            `}
+                                        >
+                                            {opt}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {attempts > 0 && <p className="text-red-500 mt-4 text-center font-bold">答錯了！您還有一次機會，但本題不計分。</p>}
+                        </div>
+                    </div>
+                );
+            }
+
+            if (stage === 'result') {
+                return (
+                    <div className="flex items-center justify-center h-screen">
+                        <div className="bg-white p-10 rounded-lg shadow-lg text-center max-w-md w-full">
+                            <h2 className="text-3xl font-bold mb-4">測驗結束！</h2>
+                            <p className="text-xl mb-2">{student.cls}班 {student.num}號</p>
+                            <p className="text-2xl font-bold text-blue-600 mb-6">{student.name}</p>
+                            <div className="bg-gray-100 p-6 rounded-lg mb-6">
+                                <p className="text-gray-600 mb-2">您的得分</p>
+                                <p className="text-5xl font-bold text-red-500">{score} / {quizQuestions.length}</p>
+                            </div>
+                            <p className="text-sm text-gray-500">成績與作答時間已自動上傳至系統。</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return null;
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
